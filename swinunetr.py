@@ -1,15 +1,3 @@
-# @title
-# Copyright (c) MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 from __future__ import annotations
 
 import itertools
@@ -29,7 +17,6 @@ from monai.networks.layers import DropPath, trunc_normal_
 from monai.utils import ensure_tuple_rep, look_up_option, optional_import
 from monai.utils.deprecate_utils import deprecated_arg
 from torch_frft.dfrft_module import dfrft
-from torch_frft.layer import DFrFTLayer, FrFTLayer
 
 rearrange, _ = optional_import("einops", name="rearrange")
 
@@ -48,11 +35,6 @@ __all__ = [
 
 
 class SwinUNETR(nn.Module):
-    """
-    Swin UNETR based on: "Hatamizadeh et al.,
-    Swin UNETR: Swin Transformers for Semantic Segmentation of Brain Tumors in MRI Images
-    <https://arxiv.org/abs/2201.01266>"
-    """
 
     patch_size: Final[int] = 2
 
@@ -80,6 +62,7 @@ class SwinUNETR(nn.Module):
         spatial_dims: int = 3,
         downsample="merging",
         use_v2=False,
+        frft_config: dict = {}
     ) -> None:
         """
         Args:
@@ -141,6 +124,8 @@ class SwinUNETR(nn.Module):
             raise ValueError("feature_size should be divisible by 12.")
 
         self.normalize = normalize
+        
+        self.frft_config = frft_config
 
         self.swinViT = SwinTransformer(
             in_chans=in_channels,
@@ -171,45 +156,57 @@ class SwinUNETR(nn.Module):
             res_block=True,
         )
 
-        self.encoder2 = SpatialFRFTLayer(UnetrBasicBlock(
-            spatial_dims=spatial_dims,
-            in_channels=feature_size,
-            out_channels=feature_size,
-            kernel_size=3,
-            stride=1,
-            norm_name=norm_name,
-            res_block=True,
-        ))
+        self.encoder2 = FrftWrapper(
+            UnetrBasicBlock(
+                spatial_dims=spatial_dims,
+                in_channels=feature_size,
+                out_channels=feature_size,
+                kernel_size=3,
+                stride=1,
+                norm_name=norm_name,
+                res_block=True,
+                ), 
+            **self.frft_config
+        )
 
-        self.encoder3 = SpatialFRFTLayer(UnetrBasicBlock(
-            spatial_dims=spatial_dims,
-            in_channels=2 * feature_size,
-            out_channels=2 * feature_size,
-            kernel_size=3,
-            stride=1,
-            norm_name=norm_name,
-            res_block=True,
-        ))
+        self.encoder3 = FrftWrapper(
+            UnetrBasicBlock(
+                spatial_dims=spatial_dims,
+                in_channels=2 * feature_size,
+                out_channels=2 * feature_size,
+                kernel_size=3,
+                stride=1,
+                norm_name=norm_name,
+                res_block=True,
+                ),
+            **self.frft_config
+        )
 
-        self.encoder4 = SpatialFRFTLayer(UnetrBasicBlock(
-            spatial_dims=spatial_dims,
-            in_channels=4 * feature_size,
-            out_channels=4 * feature_size,
-            kernel_size=3,
-            stride=1,
-            norm_name=norm_name,
-            res_block=True,
-        ))
+        self.encoder4 = FrftWrapper(
+            UnetrBasicBlock(
+                spatial_dims=spatial_dims,
+                in_channels=4 * feature_size,
+                out_channels=4 * feature_size,
+                kernel_size=3,
+                stride=1,
+                norm_name=norm_name,
+                res_block=True,
+                ),
+            **self.frft_config
+        )
 
-        self.encoder10 = SpatialFRFTLayer(UnetrBasicBlock(
-            spatial_dims=spatial_dims,
-            in_channels=16 * feature_size,
-            out_channels=16 * feature_size,
-            kernel_size=3,
-            stride=1,
-            norm_name=norm_name,
-            res_block=True,
-        ))
+        self.encoder10 = FrftWrapper(
+            UnetrBasicBlock(
+                spatial_dims=spatial_dims,
+                in_channels=16 * feature_size,
+                out_channels=16 * feature_size,
+                kernel_size=3,
+                stride=1,
+                norm_name=norm_name,
+                res_block=True,
+                ),
+            **self.frft_config
+        )
 
         self.decoder5 = UnetrUpBlock(
             spatial_dims=spatial_dims,
@@ -1138,40 +1135,89 @@ def filter_swinunetr(key, value):
     
 
 from torch_frft.frft_module import frft
-
-class FRFTTransform(nn.Module):
-    def __init__(self, order: torch.Tensor, dim: int):
-        super().__init__()
-        self.order = order
-        self.dim = dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return frft(x, self.order, dim=self.dim)
-
-class SpatialFRFTLayer(nn.Module):
-    def __init__(self, model: nn.Module, order: float = 0.0, *, dims: list = [-1, -2, -3], trainable: bool = True, residual: bool = True) -> None:
+     
+class FrftWrapper(nn.Module):
+    def __init__(self, model: nn.Module, orders: float = [0.1, 0.3, 0.5, 0.7, 0.9], dims: list = [-1, -2, -3], trainable: bool = True, residual: bool = True) -> None:
         super().__init__()
 
-        self.order = nn.Parameter(torch.tensor(order, dtype=torch.float32), requires_grad=trainable)
+        self.orders = nn.Parameter(torch.tensor(orders, dtype=torch.float32), requires_grad=trainable)
         self.dims = dims
         self.model = model
-        self.residual = residual  # 使用 'residual' 参数作为残差连接开关
-
-        self.frft_forward = nn.Sequential(*[FRFTTransform(self.order, dim) for dim in dims])
-        self.frft_inverse = nn.Sequential(*[FRFTTransform(-self.order, dim) for dim in reversed(dims)])
-
-    def __repr__(self) -> str:
-        return f"SpatialFRFTLayer(order={self.order.item():.4f}, dims={self.dims}, residual={self.residual})"
+        self.residual = residual 
+    
+        print(f"Orders: {self.orders}, Requires Grad: {self.orders.requires_grad}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.residual:
-            residual = x.clone()  # 仅在 residual 为 True 时克隆
-
-        x = self.frft_forward(x)
-        x = self.model(x)
-        x = self.frft_inverse(x)
-
-        if self.residual:
-            return x + residual  # 根据 residual 参数决定是否加上残差
-        else:
+        
+        if self.dims == None:
             return x
+        
+        order_forward_list = []
+        for order in self.orders:
+            for dim in self.dims:
+                order_forward_feature = frft(x, order, dim=dim)
+                order_forward_list.append(order_forward_feature)
+        frft_forward = sum(order_forward_list)
+
+        transformed_x = self.model(frft_forward)
+
+        order_inverse_list = []
+        for order in self.orders:
+            for dim in reversed(self.dims):
+                order_inverse_feature = frft(transformed_x, -order, dim=dim)
+                order_inverse_list.append(order_inverse_feature)
+        frft_inverse = sum(order_inverse_list)
+
+        if self.residual:
+            return x + frft_inverse
+        else:
+            return frft_inverse
+        
+        
+if __name__ == "__main__":
+    from torchsummary import summary
+
+    # 通用的图像配置
+    image_configs = {
+        "img_size": (128, 128, 128),
+        "in_channels": 4,
+        "out_channels": 3,
+        "feature_size": 48  # 修正 feature_size 的 key
+    }
+
+    # FRFT 变换配置
+    frft_configs = {
+        "normal": {"dims": None},
+        "frft_1_trainable": {"orders": [0.5], "dims": [-4], "trainable": True},  # Channel 1个可训练
+        "frft_5_trainable": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4], "trainable": True},  # Channel 5个可训练
+        "frft_5_fixed": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4], "trainable": False},  # Channel 5个固定
+        "spatial_frft_1_trainable": {"orders": [0.5], "dims": [-3, -2, -1], "trainable": True},  # Spatial 1个可训练
+        "spatial_frft_5_trainable": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-3, -2, -1], "trainable": True},  # Spatial 5个可训练
+        "spatial_frft_5_fixed": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-3, -2, -1], "trainable": False},  # Spatial 5个固定
+    }
+
+    # SwinUNETR 生成函数（按需创建模型）
+    def get_swinunetr(model_type):
+        if model_type in frft_configs:
+            return SwinUNETR(**image_configs, frft_config=frft_configs[model_type])
+        else:
+            raise ValueError(f"未知模型类型: {model_type}")
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    input_shape = (image_configs["in_channels"], *image_configs["img_size"])
+
+    for model_name in ["normal", "frft_1_trainable", "frft_5_trainable", "frft_5_fixed", 
+                        "spatial_frft_1_trainable", "spatial_frft_5_trainable", "spatial_frft_5_fixed"]:
+        print(f"\nTesting model: {model_name}")
+        
+        model = get_swinunetr(model_name).to(device)
+        
+        summary(model, input_size=input_shape, device=str(device))
+        
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Trainable parameters (manual count): {trainable_params}")
+
+        del model
+        torch.cuda.empty_cache()
+        
+        
