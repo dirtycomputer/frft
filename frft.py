@@ -13,17 +13,23 @@ from monai.transforms import (
 )
 
 from monai.utils import set_determinism
-import numpy as np
 import torch
+from configs import get_swinunetr, image_configs, frft_configs
 from swinunetr import SwinUNETR
-from utils import load_pretrain, plot_metrics, print_model_parameters
+from utils import load_pretrain, plot_metrics
 from transform import train_transform, val_transform
+import argparse
+
+parser = argparse.ArgumentParser(description="Test different SwinUNETR models with FRFT configurations.")
+parser.add_argument("--model", type=str, choices=frft_configs.keys(), required=True, help="Specify the model type to test.")
+
+args = parser.parse_args()
+model_name = args.model
+
 
 root_dir = "/data/datasets/MSD"
 
 set_determinism(seed=0)
-
-
 
 train_ds = DecathlonDataset(
     root_dir=root_dir,
@@ -51,19 +57,20 @@ val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4)
 
 max_epochs = 300
 val_interval = 1
-VAL_AMP = True
+TRAIN_AMP = False
+VAL_AMP = False
 
 
 device = torch.device("cuda:0")
-model = SwinUNETR(img_size=(128, 128, 128), in_channels=4, out_channels=3, feature_size=48).to(device)
-caption = "Swinunetr"
+model = get_swinunetr(model_name).to(device)
+caption = model_name
 
 
-load_pretrain()
+load_pretrain(model)
 
 loss_function = DiceCELoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=1e-7, T_max=max_epochs, verbose=True)
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=1e-6, T_max=max_epochs, verbose=True)
 
 dice_metric = DiceMetric(include_background=True, reduction="mean")
 dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
@@ -73,7 +80,7 @@ post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
 # define inference method
 def inference(input):
-    def _compute(input):
+    with torch.cuda.amp.autocast(enabled=VAL_AMP):
         return sliding_window_inference(
             inputs=input,
             roi_size=(128, 128, 128),
@@ -82,26 +89,24 @@ def inference(input):
             overlap=0.5,
         )
 
-    if VAL_AMP:
-        with torch.cuda.amp.autocast():
-            return _compute(input)
-    else:
-        return _compute(input)
-
-
-# use amp to accelerate training
-scaler = torch.cuda.amp.GradScaler()
+scaler = torch.cuda.amp.GradScaler(enabled=TRAIN_AMP)
 # enable cuDNN benchmark
 torch.backends.cudnn.benchmark = True
 
 best_metric = -1
 best_metric_epoch = -1
-best_metrics_epochs_and_time = [[], [], []]
+best_metrics = OrderedDict({
+    "metric": [],
+    "epoch": [],
+    "time": [],
+})
 epoch_loss_values = []
-metric_values = []
-metric_values_tc = []
-metric_values_wt = []
-metric_values_et = []
+metric_records = {
+    "mean_dice": [],
+    "tumor_core": [],
+    "whole_tumor": [],
+    "enhancing_tumor": [],
+}
 
 total_start = time.time()
 for epoch in range(max_epochs):
@@ -119,7 +124,7 @@ for epoch in range(max_epochs):
             batch_data["label"].to(device),
         )
         optimizer.zero_grad()
-        with torch.cuda.amp.autocast():
+        with torch.cuda.amp.autocast(enabled=TRAIN_AMP):
             outputs = model(inputs)
             loss = loss_function(outputs, labels)
         scaler.scale(loss).backward()
@@ -149,38 +154,37 @@ for epoch in range(max_epochs):
                 dice_metric(y_pred=val_outputs, y=val_labels)
                 dice_metric_batch(y_pred=val_outputs, y=val_labels)
 
-            metric = dice_metric.aggregate().item()
-            metric_values.append(metric)
+
             metric_batch = dice_metric_batch.aggregate()
-            metric_tc = metric_batch[0].item()
-            metric_values_tc.append(metric_tc)
-            metric_wt = metric_batch[1].item()
-            metric_values_wt.append(metric_wt)
-            metric_et = metric_batch[2].item()
-            metric_values_et.append(metric_et)
+            metric = dice_metric.aggregate().item()
+            
+            metric_records["mean_dice"].append(metric)
+            metric_records["tumor_core"].append(metric_batch[0].item())
+            metric_records["whole_tumor"].append(metric_batch[1].item())
+            metric_records["enhancing_tumor"].append(metric_batch[2].item())
+            
             dice_metric.reset()
             dice_metric_batch.reset()
 
             if metric > best_metric:
                 best_metric = metric
                 best_metric_epoch = epoch + 1
-                best_metrics_epochs_and_time[0].append(best_metric)
-                best_metrics_epochs_and_time[1].append(best_metric_epoch)
-                best_metrics_epochs_and_time[2].append(time.time() - total_start)
+                best_metrics["metric"].append(best_metric)
+                best_metrics["epoch"].append(best_metric_epoch)
+                best_metrics["time"].append(time.time() - total_start)
                 torch.save(
                     model.state_dict(),
                     os.path.join(root_dir, "best_metric_model.pth"),
                 )
                 print("saved new best metric model")
-            print(
-                f"current epoch: {epoch + 1} current mean dice: {metric:.4f}"
-                f" tc: {metric_tc:.4f} wt: {metric_wt:.4f} et: {metric_et:.4f}"
-                f"\nbest mean dice: {best_metric:.4f}"
-                f" at epoch: {best_metric_epoch}"
-            )
     print(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
-    plot_metrics(val_interval, epoch_loss_values, metric_values, metric_values_tc, metric_values_wt, metric_values_et, caption=caption)
+    plot_metrics(val_interval, epoch_loss_values, 
+                 metric_records["mean_dice"], metric_records["tumor_core"], metric_records["whole_tumor"], metric_records["enhancing_tumor"], 
+                 caption=caption)
 total_time = time.time() - total_start
 
 print(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}, total time: {total_time}.")
+
+
+
 

@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
@@ -19,44 +20,9 @@ def print_model_parameters(model):
 def load_pretrain(model, path = "ssl_pretrained_weights.pth"):
     ssl_dict = torch.load(path)
     ssl_weights = ssl_dict["state_dict"]
-    monai_loadable_state_dict = OrderedDict()
-    model_prior_dict = model.state_dict()
-    model_update_dict = model_prior_dict
-
-    for key, value in ssl_weights.items():
-        if key[:8] == "encoder.":
-            if key[8:19] == "patch_embed":
-                new_key = "swinViT." + key[8:]
-            else:
-                new_key = "swinViT." + key[8:18] + key[20:]
-            monai_loadable_state_dict[new_key] = value
-        else:
-            monai_loadable_state_dict[key] = value
-
-    model_update_dict.update(monai_loadable_state_dict)
-    model.load_state_dict(model_update_dict, strict=False)
-    model_final_loaded_dict = model.state_dict()
-
-    # Safeguard test to ensure that weights got loaded successfully
-    layer_counter = 0
-    for k, _v in model_final_loaded_dict.items():
-        if k in model_prior_dict:
-            layer_counter = layer_counter + 1
-
-            old_wts = model_prior_dict[k]
-            new_wts = model_final_loaded_dict[k]
-
-            old_wts = old_wts.to("cpu").numpy()
-            new_wts = new_wts.to("cpu").numpy()
-            diff = np.mean(np.abs(old_wts, new_wts))
-            print("Layer {}, the update difference is: {}".format(k, diff))
-            if diff == 0.0:
-                print("Warning: No difference found for layer {}".format(k))
-                
-            model_final_loaded_dict[k].requires_grad = False
-    print("Total updated layers {} / {}".format(layer_counter, len(model_prior_dict)))
-    print("Pretrained Weights Succesfully Loaded !")
-    
+    missing_keys, unexpected_keys = model.load_state_dict(ssl_weights, strict=False)
+    print("Missing keys:", missing_keys)
+    print("Unexpected keys:", unexpected_keys)
     print_model_parameters(model)
 
 
@@ -76,7 +42,7 @@ def plot_metrics(val_interval, epoch_loss_values,
     y = metric_values
     plt.xlabel("epoch")
     plt.plot(x, y, color="green")
-    plt.savefig(f"{caption}_Loss.png")
+    plt.savefig(f"results/{caption}_Loss.png")
     plt.close()
 
     plt.figure("train", (18, 6))
@@ -98,5 +64,5 @@ def plot_metrics(val_interval, epoch_loss_values,
     y = metric_values_et
     plt.xlabel("epoch")
     plt.plot(x, y, color="purple")
-    plt.savefig(f"{caption}_Dice.png")
+    plt.savefig(f"results/{caption}_Dice.png")
     plt.close()

@@ -16,7 +16,8 @@ from monai.networks.blocks import PatchEmbed, UnetOutBlock, UnetrBasicBlock, Une
 from monai.networks.layers import DropPath, trunc_normal_
 from monai.utils import ensure_tuple_rep, look_up_option, optional_import
 from monai.utils.deprecate_utils import deprecated_arg
-from torch_frft.dfrft_module import dfrft
+from torch_frft.frft_module import frft
+# from configs import get_swinunetr, image_configs, frft_configs
 
 rearrange, _ = optional_import("einops", name="rearrange")
 
@@ -168,6 +169,7 @@ class SwinUNETR(nn.Module):
                 ), 
             **self.frft_config
         )
+
 
         self.encoder3 = FrftWrapper(
             UnetrBasicBlock(
@@ -1134,16 +1136,16 @@ def filter_swinunetr(key, value):
 
     
 
-from torch_frft.frft_module import frft
+
      
 class FrftWrapper(nn.Module):
-    def __init__(self, model: nn.Module, orders: float = [0.1, 0.3, 0.5, 0.7, 0.9], dims: list = [-1, -2, -3], trainable: bool = True, residual: bool = True) -> None:
+    def __init__(self, model: nn.Module, orders: float = [0.5], dims: list = [-1, -2, -3], trainable: bool = True, residual: bool = False) -> None:
         super().__init__()
 
         self.orders = nn.Parameter(torch.tensor(orders, dtype=torch.float32), requires_grad=trainable)
         self.dims = dims
         self.model = model
-        self.residual = residual 
+        self.residual = residual
     
         print(f"Orders: {self.orders}, Requires Grad: {self.orders.requires_grad}")
 
@@ -1174,50 +1176,23 @@ class FrftWrapper(nn.Module):
             return frft_inverse
         
         
-if __name__ == "__main__":
-    from torchsummary import summary
-
-    # 通用的图像配置
-    image_configs = {
-        "img_size": (128, 128, 128),
-        "in_channels": 4,
-        "out_channels": 3,
-        "feature_size": 48  # 修正 feature_size 的 key
-    }
-
-    # FRFT 变换配置
-    frft_configs = {
-        "normal": {"dims": None},
-        "frft_1_trainable": {"orders": [0.5], "dims": [-4], "trainable": True},  # Channel 1个可训练
-        "frft_5_trainable": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4], "trainable": True},  # Channel 5个可训练
-        "frft_5_fixed": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4], "trainable": False},  # Channel 5个固定
-        "spatial_frft_1_trainable": {"orders": [0.5], "dims": [-3, -2, -1], "trainable": True},  # Spatial 1个可训练
-        "spatial_frft_5_trainable": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-3, -2, -1], "trainable": True},  # Spatial 5个可训练
-        "spatial_frft_5_fixed": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-3, -2, -1], "trainable": False},  # Spatial 5个固定
-    }
-
-    # SwinUNETR 生成函数（按需创建模型）
-    def get_swinunetr(model_type):
-        if model_type in frft_configs:
-            return SwinUNETR(**image_configs, frft_config=frft_configs[model_type])
-        else:
-            raise ValueError(f"未知模型类型: {model_type}")
+# if __name__ == "__main__":
+#     from torchsummary import summary
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    input_shape = (image_configs["in_channels"], *image_configs["img_size"])
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     input_shape = (image_configs["in_channels"], *image_configs["img_size"])
 
-    for model_name in ["normal", "frft_1_trainable", "frft_5_trainable", "frft_5_fixed", 
-                        "spatial_frft_1_trainable", "spatial_frft_5_trainable", "spatial_frft_5_fixed"]:
-        print(f"\nTesting model: {model_name}")
+#     for model_name in frft_configs.keys():
+#         print(f"\nTesting model: {model_name}")
         
-        model = get_swinunetr(model_name).to(device)
+#         model = get_swinunetr(model_name).to(device)
         
-        summary(model, input_size=input_shape, device=str(device))
+#         summary(model, input_size=input_shape, device=str(device))
         
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"Trainable parameters (manual count): {trainable_params}")
+#         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+#         print(f"Trainable parameters (manual count): {trainable_params}")
 
-        del model
-        torch.cuda.empty_cache()
+#         del model
+#         torch.cuda.empty_cache()
         
         

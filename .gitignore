@@ -1,3 +1,5 @@
 __pycache__/
 *.png
 *.pth
+results/
+launch.json
