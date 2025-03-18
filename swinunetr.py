@@ -15,9 +15,7 @@ from monai.networks.blocks import MLPBlock as Mlp
 from monai.networks.blocks import PatchEmbed, UnetOutBlock, UnetrBasicBlock, UnetrUpBlock
 from monai.networks.layers import DropPath, trunc_normal_
 from monai.utils import ensure_tuple_rep, look_up_option, optional_import
-from monai.utils.deprecate_utils import deprecated_arg
 from torch_frft.frft_module import frft
-# from configs import get_swinunetr, image_configs, frft_configs
 
 rearrange, _ = optional_import("einops", name="rearrange")
 
@@ -39,13 +37,6 @@ class SwinUNETR(nn.Module):
 
     patch_size: Final[int] = 2
 
-    @deprecated_arg(
-        name="img_size",
-        since="1.3",
-        removed="1.5",
-        msg_suffix="The img_size argument is not required anymore and "
-        "checks on the input size are run during forward().",
-    )
     def __init__(
         self,
         img_size: Sequence[int] | int,
@@ -65,41 +56,6 @@ class SwinUNETR(nn.Module):
         use_v2=False,
         frft_config: dict = {}
     ) -> None:
-        """
-        Args:
-            img_size: spatial dimension of input image.
-                This argument is only used for checking that the input image size is divisible by the patch size.
-                The tensor passed to forward() can have a dynamic shape as long as its spatial dimensions are divisible by 2**5.
-                It will be removed in an upcoming version.
-            in_channels: dimension of input channels.
-            out_channels: dimension of output channels.
-            feature_size: dimension of network feature size.
-            depths: number of layers in each stage.
-            num_heads: number of attention heads.
-            norm_name: feature normalization type and arguments.
-            drop_rate: dropout rate.
-            attn_drop_rate: attention dropout rate.
-            dropout_path_rate: drop path rate.
-            normalize: normalize output intermediate features in each stage.
-            use_checkpoint: use gradient checkpointing for reduced memory usage.
-            spatial_dims: number of spatial dims.
-            downsample: module used for downsampling, available options are `"mergingv2"`, `"merging"` and a
-                user-specified `nn.Module` following the API defined in :py:class:`monai.networks.nets.PatchMerging`.
-                The default is currently `"merging"` (the original version defined in v0.9.0).
-            use_v2: using swinunetr_v2, which adds a residual convolution block at the beggining of each swin stage.
-
-        Examples::
-
-            # for 3D single channel input with size (96,96,96), 4-channel output and feature size of 48.
-            >>> net = SwinUNETR(img_size=(96,96,96), in_channels=1, out_channels=4, feature_size=48)
-
-            # for 3D 4-channel input with size (128,128,128), 3-channel output and (2,4,2,2) layers in each stage.
-            >>> net = SwinUNETR(img_size=(128,128,128), in_channels=4, out_channels=3, depths=(2,4,2,2))
-
-            # for 2D single channel input with size (96,96), 2-channel output and gradient checkpointing.
-            >>> net = SwinUNETR(img_size=(96,96), in_channels=3, out_channels=2, use_checkpoint=True, spatial_dims=2)
-
-        """
 
         super().__init__()
 
@@ -340,15 +296,6 @@ class SwinUNETR(nn.Module):
 
 
 def window_partition(x, window_size):
-    """window partition operation based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        x: input tensor.
-        window_size: local window size.
-    """
     x_shape = x.size()  # length 4 or 5 only
     if len(x_shape) == 5:
         b, d, h, w, c = x_shape
@@ -374,16 +321,6 @@ def window_partition(x, window_size):
 
 
 def window_reverse(windows, window_size, dims):
-    """window reverse operation based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        windows: windows tensor.
-        window_size: local window size.
-        dims: dimension values.
-    """
     if len(dims) == 4:
         b, d, h, w = dims
         x = windows.view(
@@ -406,16 +343,6 @@ def window_reverse(windows, window_size, dims):
 
 
 def get_window_size(x_size, window_size, shift_size=None):
-    """Computing window size based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        x_size: input size.
-        window_size: local window size.
-        shift_size: window shifting size.
-    """
 
     use_window_size = list(window_size)
     if shift_size is not None:
@@ -433,12 +360,6 @@ def get_window_size(x_size, window_size, shift_size=None):
 
 
 class WindowAttention(nn.Module):
-    """
-    Window based multi-head self attention module with relative position bias based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
 
     def __init__(
         self,
@@ -449,15 +370,6 @@ class WindowAttention(nn.Module):
         attn_drop: float = 0.0,
         proj_drop: float = 0.0,
     ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            qkv_bias: add a learnable bias to query, key, value.
-            attn_drop: attention dropout rate.
-            proj_drop: dropout rate of output.
-        """
 
         super().__init__()
         self.dim = dim
@@ -542,12 +454,6 @@ class WindowAttention(nn.Module):
 
 
 class SwinTransformerBlock(nn.Module):
-    """
-    Swin Transformer block based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
 
     def __init__(
         self,
@@ -564,21 +470,6 @@ class SwinTransformerBlock(nn.Module):
         norm_layer: type[LayerNorm] = nn.LayerNorm,
         use_checkpoint: bool = False,
     ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            shift_size: window shift size.
-            mlp_ratio: ratio of mlp hidden dim to embedding dim.
-            qkv_bias: add a learnable bias to query, key, value.
-            drop: dropout rate.
-            attn_drop: attention dropout rate.
-            drop_path: stochastic depth rate.
-            act_layer: activation layer.
-            norm_layer: normalization layer.
-            use_checkpoint: use gradient checkpointing for reduced memory usage.
-        """
 
         super().__init__()
         self.dim = dim
@@ -708,20 +599,8 @@ class SwinTransformerBlock(nn.Module):
 
 
 class PatchMergingV2(nn.Module):
-    """
-    Patch merging layer based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
 
     def __init__(self, dim: int, norm_layer: type[LayerNorm] = nn.LayerNorm, spatial_dims: int = 3) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            norm_layer: normalization layer.
-            spatial_dims: number of spatial dims.
-        """
 
         super().__init__()
         self.dim = dim
@@ -756,7 +635,6 @@ class PatchMergingV2(nn.Module):
 
 
 class PatchMerging(PatchMergingV2):
-    """The `PatchMerging` module previously defined in v0.9.0."""
 
     def forward(self, x):
         x_shape = x.size()
@@ -786,17 +664,6 @@ MERGING_MODE = {"merging": PatchMerging, "mergingv2": PatchMergingV2}
 
 
 def compute_mask(dims, window_size, shift_size, device):
-    """Computing region masks based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        dims: dimension values.
-        window_size: local window size.
-        shift_size: shift size.
-        device: device.
-    """
 
     cnt = 0
 
@@ -826,12 +693,6 @@ def compute_mask(dims, window_size, shift_size, device):
 
 
 class BasicLayer(nn.Module):
-    """
-    Basic Swin Transformer layer in one stage based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
 
     def __init__(
         self,
@@ -848,21 +709,6 @@ class BasicLayer(nn.Module):
         downsample: nn.Module | None = None,
         use_checkpoint: bool = False,
     ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            depth: number of layers in each stage.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            drop_path: stochastic depth rate.
-            mlp_ratio: ratio of mlp hidden dim to embedding dim.
-            qkv_bias: add a learnable bias to query, key, value.
-            drop: dropout rate.
-            attn_drop: attention dropout rate.
-            norm_layer: normalization layer.
-            downsample: an optional downsampling layer at the end of the layer.
-            use_checkpoint: use gradient checkpointing for reduced memory usage.
-        """
 
         super().__init__()
         self.window_size = window_size
@@ -926,12 +772,6 @@ class BasicLayer(nn.Module):
 
 
 class SwinTransformer(nn.Module):
-    """
-    Swin Transformer based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
 
     def __init__(
         self,
@@ -953,28 +793,6 @@ class SwinTransformer(nn.Module):
         downsample="merging",
         use_v2=False,
     ) -> None:
-        """
-        Args:
-            in_chans: dimension of input channels.
-            embed_dim: number of linear projection output channels.
-            window_size: local window size.
-            patch_size: patch size.
-            depths: number of layers in each stage.
-            num_heads: number of attention heads.
-            mlp_ratio: ratio of mlp hidden dim to embedding dim.
-            qkv_bias: add a learnable bias to query, key, value.
-            drop_rate: dropout rate.
-            attn_drop_rate: attention dropout rate.
-            drop_path_rate: stochastic depth rate.
-            norm_layer: normalization layer.
-            patch_norm: add normalization after patch embedding.
-            use_checkpoint: use gradient checkpointing for reduced memory usage.
-            spatial_dims: spatial dimension.
-            downsample: module used for downsampling, available options are `"mergingv2"`, `"merging"` and a
-                user-specified `nn.Module` following the API defined in :py:class:`monai.networks.nets.PatchMerging`.
-                The default is currently `"merging"` (the original version defined in v0.9.0).
-            use_v2: using swinunetr_v2, which adds a residual convolution block at the beginning of each swin stage.
-        """
 
         super().__init__()
         self.num_layers = len(depths)
@@ -1082,117 +900,59 @@ class SwinTransformer(nn.Module):
         x4 = self.layers4[0](x3.contiguous())
         x4_out = self.proj_out(x4, normalize)
         return [x0_out, x1_out, x2_out, x3_out, x4_out]
-
-
-def filter_swinunetr(key, value):
-    """
-    A filter function used to filter the pretrained weights from [1], then the weights can be loaded into MONAI SwinUNETR Model.
-    This function is typically used with `monai.networks.copy_model_state`
-    [1] "Valanarasu JM et al., Disruptive Autoencoders: Leveraging Low-level features for 3D Medical Image Pre-training
-    <https://arxiv.org/abs/2307.16896>"
-
-    Args:
-        key: the key in the source state dict used for the update.
-        value: the value in the source state dict used for the update.
-
-    Examples::
-
-        import torch
-        from monai.apps import download_url
-        from monai.networks.utils import copy_model_state
-        from monai.networks.nets.swin_unetr import SwinUNETR, filter_swinunetr
-
-        model = SwinUNETR(img_size=(96, 96, 96), in_channels=1, out_channels=3, feature_size=48)
-        resource = (
-            "https://github.com/Project-MONAI/MONAI-extra-test-data/releases/download/0.8.1/ssl_pretrained_weights.pth"
-        )
-        ssl_weights_path = "./ssl_pretrained_weights.pth"
-        download_url(resource, ssl_weights_path)
-        ssl_weights = torch.load(ssl_weights_path)["model"]
-
-        dst_dict, loaded, not_loaded = copy_model_state(model, ssl_weights, filter_func=filter_swinunetr)
-
-    """
-    if key in [
-        "encoder.mask_token",
-        "encoder.norm.weight",
-        "encoder.norm.bias",
-        "out.conv.conv.weight",
-        "out.conv.conv.bias",
-    ]:
-        return None
-
-    if key[:8] == "encoder.":
-        if key[8:19] == "patch_embed":
-            new_key = "swinViT." + key[8:]
-        else:
-            new_key = "swinViT." + key[8:18] + key[20:]
-
-        return new_key, value
-    else:
-        return None
     
-    
-
-    
-
-
      
 class FrftWrapper(nn.Module):
-    def __init__(self, model: nn.Module, orders: float = [0.5], dims: list = [-1, -2, -3], trainable: bool = True, residual: bool = False) -> None:
+    def __init__(self, model: nn.Module, orders: float = [0.5], dims: list = [-1, -2, -3], trainable: bool = True, residual: bool = True) -> None:
         super().__init__()
 
         self.orders = nn.Parameter(torch.tensor(orders, dtype=torch.float32), requires_grad=trainable)
         self.dims = dims
         self.model = model
         self.residual = residual
+        self.layer_norm_forward = None
+        self.layer_norm_inverse = None
+        self.mlp_forward = Mlp(hidden_size=len(self.orders), mlp_dim=16, act="GELU", dropout_rate=0.1, dropout_mode="swin")
+        self.mlp_inverse = Mlp(hidden_size=len(self.orders), mlp_dim=16, act="GELU", dropout_rate=0.1, dropout_mode="swin")
+        
+        
     
         print(f"Orders: {self.orders}, Requires Grad: {self.orders.requires_grad}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
-        if self.dims == None:
+        
+        if self.dims is None:
             return x
+        
+        if self.layer_norm_forward is None or self.layer_norm_inverse is None:
+            self.layer_norm_forward = nn.LayerNorm(x.shape[2:], eps=1e-6).to(x.device)
+            self.layer_norm_inverse = nn.LayerNorm(x.shape[2:], eps=1e-6).to(x.device)
         
         order_forward_list = []
         for order in self.orders:
+            order_forward_feature = x
             for dim in self.dims:
-                order_forward_feature = frft(x, order, dim=dim)
-                order_forward_list.append(order_forward_feature)
-        frft_forward = sum(order_forward_list)
+                order_forward_feature = frft(order_forward_feature, order, dim=dim)
+            order_forward_list.append(torch.abs(order_forward_feature))
+        frft_forward = torch.mean(self.mlp_forward(torch.stack(order_forward_list,-1)),-1)
 
+        frft_forward = self.layer_norm_forward(frft_forward)
         transformed_x = self.model(frft_forward)
 
         order_inverse_list = []
-        for order in self.orders:
+        for order in reversed(self.orders):
+            order_inverse_feature = transformed_x
             for dim in reversed(self.dims):
-                order_inverse_feature = frft(transformed_x, -order, dim=dim)
-                order_inverse_list.append(order_inverse_feature)
-        frft_inverse = sum(order_inverse_list)
+                order_inverse_feature = frft(order_inverse_feature, -order, dim=dim)
+            order_inverse_list.append(torch.abs(order_inverse_feature))
+        frft_inverse = torch.mean(self.mlp_inverse(torch.stack(order_inverse_list,-1)),-1)
 
         if self.residual:
-            return x + frft_inverse
+            return x + self.layer_norm_inverse(frft_inverse)
         else:
             return frft_inverse
         
-        
-# if __name__ == "__main__":
-#     from torchsummary import summary
     
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     input_shape = (image_configs["in_channels"], *image_configs["img_size"])
-
-#     for model_name in frft_configs.keys():
-#         print(f"\nTesting model: {model_name}")
-        
-#         model = get_swinunetr(model_name).to(device)
-        
-#         summary(model, input_size=input_shape, device=str(device))
-        
-#         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-#         print(f"Trainable parameters (manual count): {trainable_params}")
-
-#         del model
-#         torch.cuda.empty_cache()
         
         

@@ -12,11 +12,16 @@ image_configs = {
 frft_configs = {
     "normal": {"dims": None},
     "frft_1_trainable": {"orders": [0.5], "dims": [-4], "trainable": True},
+    "frft_1_fixed": {"orders": [0.5], "dims": [-4], "trainable": False},
     "frft_5_trainable": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4], "trainable": True},
     "frft_5_fixed": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4], "trainable": False},
+    
+    "spatial_frft_1_fixed": {"orders": [0.5], "dims": [-3, -2, -1], "trainable": False},
     "spatial_frft_1_trainable": {"orders": [0.5], "dims": [-3, -2, -1], "trainable": True},
     "spatial_frft_5_trainable": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-3, -2, -1], "trainable": True},
     "spatial_frft_5_fixed": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-3, -2, -1], "trainable": False},
+    
+    "mixed_frft_1_fixed": {"orders": [0.5], "dims": [-4, -3, -2, -1], "trainable": False},
     "mixed_frft_1_trainable": {"orders": [0.5], "dims": [-4, -3, -2, -1], "trainable": True},
     "mixed_frft_5_trainable": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4, -3, -2, -1], "trainable": True},
     "mixed_frft_5_fixed": {"orders": [0.1, 0.3, 0.5, 0.7, 0.9], "dims": [-4, -3, -2, -1], "trainable": False},

@@ -16,6 +16,7 @@ from monai.utils import set_determinism
 import torch
 from configs import get_swinunetr, image_configs, frft_configs
 from swinunetr import SwinUNETR
+from unetr import UNETR
 from utils import load_pretrain, plot_metrics
 from transform import train_transform, val_transform
 import argparse
@@ -55,14 +56,15 @@ val_ds = DecathlonDataset(
 
 val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4)
 
-max_epochs = 300
+max_epochs = 50
 val_interval = 1
 TRAIN_AMP = False
 VAL_AMP = False
 
 
-device = torch.device("cuda:0")
+device = torch.device("cuda:1")
 model = get_swinunetr(model_name).to(device)
+# model = UNETR().to(device)
 caption = model_name
 
 
@@ -83,7 +85,7 @@ def inference(input):
     with torch.cuda.amp.autocast(enabled=VAL_AMP):
         return sliding_window_inference(
             inputs=input,
-            roi_size=(128, 128, 128),
+            roi_size=image_configs["img_size"],
             sw_batch_size=1,
             predictor=model,
             overlap=0.5,

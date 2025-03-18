@@ -14,6 +14,8 @@ from monai.transforms import (
     EnsureChannelFirstd,
 )
 
+from configs import image_configs
+
 class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
     """
     Convert labels to multi channels based on brats classes:
@@ -51,7 +53,7 @@ train_transform = Compose(
             pixdim=(1.0, 1.0, 1.0),
             mode=("bilinear", "nearest"),
         ),
-        RandSpatialCropd(keys=["image", "label"], roi_size=[128, 128, 128], random_size=False),
+        RandSpatialCropd(keys=["image", "label"], roi_size=image_configs["img_size"], random_size=False),
         RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
         RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
         RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
