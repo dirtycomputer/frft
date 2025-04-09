@@ -127,8 +127,7 @@ class SwinUNETR(nn.Module):
         )
 
 
-        self.encoder3 = FrftWrapper(
-            UnetrBasicBlock(
+        self.encoder3 = UnetrBasicBlock(
                 spatial_dims=spatial_dims,
                 in_channels=2 * feature_size,
                 out_channels=2 * feature_size,
@@ -136,12 +135,9 @@ class SwinUNETR(nn.Module):
                 stride=1,
                 norm_name=norm_name,
                 res_block=True,
-                ),
-            **self.frft_config
-        )
+                )
 
-        self.encoder4 = FrftWrapper(
-            UnetrBasicBlock(
+        self.encoder4 = UnetrBasicBlock(
                 spatial_dims=spatial_dims,
                 in_channels=4 * feature_size,
                 out_channels=4 * feature_size,
@@ -149,12 +145,9 @@ class SwinUNETR(nn.Module):
                 stride=1,
                 norm_name=norm_name,
                 res_block=True,
-                ),
-            **self.frft_config
-        )
+                )
 
-        self.encoder10 = FrftWrapper(
-            UnetrBasicBlock(
+        self.encoder10 = UnetrBasicBlock(
                 spatial_dims=spatial_dims,
                 in_channels=16 * feature_size,
                 out_channels=16 * feature_size,
@@ -162,9 +155,8 @@ class SwinUNETR(nn.Module):
                 stride=1,
                 norm_name=norm_name,
                 res_block=True,
-                ),
-            **self.frft_config
-        )
+                )
+        
 
         self.decoder5 = UnetrUpBlock(
             spatial_dims=spatial_dims,

@@ -2,10 +2,10 @@ from swinunetr import SwinUNETR
 
 
 image_configs = {
-        "img_size": (128, 128, 128),
+        "img_size": (96, 96, 96),
         "in_channels": 4,
         "out_channels": 3,
-        "feature_size": 48,  # Corrected key for feature_size
+        "feature_size": 12,  # Corrected key for feature_size
     }
 
 # Define FRFT transformation configurations

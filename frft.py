@@ -15,14 +15,13 @@ from monai.transforms import (
 from monai.utils import set_determinism
 import torch
 from configs import get_swinunetr, image_configs, frft_configs
-from swinunetr import SwinUNETR
-from unetr import UNETR
 from utils import load_pretrain, plot_metrics
 from transform import train_transform, val_transform
 import argparse
 
 parser = argparse.ArgumentParser(description="Test different SwinUNETR models with FRFT configurations.")
 parser.add_argument("--model", type=str, choices=frft_configs.keys(), required=True, help="Specify the model type to test.")
+parser.add_argument("--device", type=str, required=True, help="Specify the device")
 
 args = parser.parse_args()
 model_name = args.model
@@ -42,7 +41,7 @@ train_ds = DecathlonDataset(
     num_workers=4,
 )
 
-train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
 
 val_ds = DecathlonDataset(
     root_dir=root_dir,
@@ -54,21 +53,20 @@ val_ds = DecathlonDataset(
     num_workers=4,
 )
 
-val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
-max_epochs = 50
+max_epochs = 30
 val_interval = 1
 TRAIN_AMP = False
 VAL_AMP = False
 
 
-device = torch.device("cuda:1")
+device = torch.device(args.device)
 model = get_swinunetr(model_name).to(device)
-# model = UNETR().to(device)
 caption = model_name
 
 
-load_pretrain(model)
+# load_pretrain(model)
 
 loss_function = DiceCELoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
@@ -88,7 +86,7 @@ def inference(input):
             roi_size=image_configs["img_size"],
             sw_batch_size=1,
             predictor=model,
-            overlap=0.5,
+            overlap=0.25,
         )
 
 scaler = torch.cuda.amp.GradScaler(enabled=TRAIN_AMP)
